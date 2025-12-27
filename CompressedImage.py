@@ -49,6 +49,15 @@ class CompressedImage:
             return np.clip(approximation, 0, 255).astype(np.uint8)
         return approximation
     
+    def kLayerApproximationFast(self, k:int, sanatize = True) -> np.ndarray:
+        channels: list[np.ndarray] = []
+        for color_channel in range(self.num_channels):
+            channels.append((self.UMatrices[color_channel][:,:k] * self.SMatrices[color_channel][:k][np.newaxis, :]) @ self.VTMatrices[color_channel][:k,:])
+        approximation =  np.stack(channels, axis=2)
+        if sanatize:
+            return np.clip(approximation, 0, 255).astype(np.uint8)
+        return approximation
+    
     def saveImage(self, path:str, maxK: int) -> None:
         db = {}
         if(maxK == -1):
@@ -79,3 +88,36 @@ class CompressedImage:
             numBytes += self.VTMatrices[color_channel][:k,:].nbytes
             numBytes += self.SMatrices[color_channel][:k].nbytes
         return numBytes
+    
+    def findK(self, accuracy: int) -> int:
+        accuracy = int(np.clip(accuracy, 0, 99))
+        target_rel_err = 1.0 - (accuracy / 100.0)   # want avg_rel_err <= this
+
+        # maxK based on available singular values (safe)
+        maxK = min(len(s) for s in self.SMatrices)
+        if maxK < 1:
+            return 0  # nothing to do / degenerate
+
+        C = self.num_channels
+
+        # s2: (C, maxK)
+        s2 = np.stack([self.SMatrices[c][:maxK].astype(np.float64) ** 2
+                        for c in range(C)], axis=0)
+
+        tot2 = s2.sum(axis=1)  # (C,)
+        # avoid divide-by-zero: if a channel is all-zero, define rel_err=0 for all k
+        nonzero = tot2 > 0.0
+
+        # tail2[:, k-1] = sum_{i>k} s_i^2
+        prefix2 = np.cumsum(s2, axis=1)              # (C, maxK)
+        tail2 = tot2[:, None] - prefix2              # (C, maxK)
+
+        rel_err = np.zeros((C, maxK), dtype=np.float64)
+        rel_err[nonzero] = np.sqrt(tail2[nonzero] / tot2[nonzero, None])
+
+        avg_rel_err = rel_err.mean(axis=0)           # (maxK,) for k=1..maxK
+
+        hits = np.flatnonzero(avg_rel_err <= target_rel_err)
+        return int(hits[0] + 1) if hits.size else maxK
+
+
