@@ -48,10 +48,10 @@ python main.py input.svd -a 85
 
 ## Defining Accuracy
 Let $A$ be the original image and $A_k$ the rank-k approximation.
-Relative Frobenius error is defined as:
-$$
-\frac{||A - A_k||​​}{||A||_F}
-$$
+Relative Frobenius error is defined as
+<p align="center">
+$$\frac{\|A - A_k\|_F}{\|A\|_F}$$
+</p>
 For SVD-based reconstructions, this is computed directly from the discarded singular values, averaged across channels.
 
 The implementation finds the minimum rank that satisfies a given accuracy constraint.
